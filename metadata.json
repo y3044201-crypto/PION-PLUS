@@ -1,0 +1,8 @@
+{
+  "name": "Remix: PION WEB",
+  "description": "Visualizes Google Sheets spreadsheet data and enables two-way data synchronization and edits.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
