@@ -194,8 +194,8 @@ export async function updateFullSheetValues(
 ): Promise<any> {
   // Clear first then write
   const encodedTitle = encodeURIComponent(sheetTitle);
-  await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${encodedTitle}'!A1:ZZ5000:clear`,
+  const clearRes = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodedTitle}!A1:ZZ5000:clear`,
     {
       method: 'POST',
       headers: {
@@ -205,8 +205,14 @@ export async function updateFullSheetValues(
     }
   );
 
+  if (!clearRes.ok) {
+    if (clearRes.status === 401 || clearRes.status === 403) {
+      throw new Error('UNAUTHORIZED_TOKEN: Sesi Google Access Token telah kedaluwarsa atau tidak valid. Silakan login ulang.');
+    }
+  }
+
   const response = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${encodedTitle}'!A1?valueInputOption=USER_ENTERED`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodedTitle}!A1?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
       headers: {
@@ -220,6 +226,9 @@ export async function updateFullSheetValues(
   );
 
   if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('UNAUTHORIZED_TOKEN: Sesi Google Access Token telah kedaluwarsa atau tidak valid. Silakan login ulang.');
+    }
     const errorText = await response.text();
     throw new Error(`Gagal menyimpan perubahan ke lembar '${sheetTitle}': ${errorText}`);
   }
@@ -524,7 +533,11 @@ export async function savePoToGoogleSheet(
     } else if (meta.sheets.length > 0) {
       sheetTitle = meta.sheets[0].title;
     }
-  } catch (err) {
+  } catch (err: any) {
+    const errStr = String(err?.message || err);
+    if (errStr.includes('401') || errStr.includes('403') || errStr.includes('Unauthenticated') || errStr.includes('Invalid Credentials')) {
+      throw new Error(`UNAUTHORIZED_TOKEN: Sesi Google Access Token telah kedaluwarsa atau tidak valid. ${errStr}`);
+    }
     console.warn('Metadata lookup warning:', err);
   }
 
@@ -539,7 +552,7 @@ export async function savePoToGoogleSheet(
   if (targetSoNumber) {
     try {
       const checkResponse = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${encodedTitle}'!A1:ZZ5000`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodedTitle}!A1:ZZ5000`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -554,8 +567,13 @@ export async function savePoToGoogleSheet(
           }
           return false;
         });
+      } else if (checkResponse.status === 401 || checkResponse.status === 403) {
+        throw new Error('UNAUTHORIZED_TOKEN: Sesi Google Access Token telah kedaluwarsa atau tidak valid.');
       }
     } catch (checkErr: any) {
+      if (checkErr?.message?.includes('UNAUTHORIZED_TOKEN')) {
+        throw checkErr;
+      }
       console.warn('Error checking existing SO NUMBERs in Google Sheets:', checkErr);
     }
   }
@@ -625,7 +643,7 @@ export async function savePoToGoogleSheet(
   } else {
     // Append to sheet
     const response = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${encodedTitle}'!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodedTitle}!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
       {
         method: 'POST',
         headers: {
@@ -639,6 +657,9 @@ export async function savePoToGoogleSheet(
     );
 
     if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        throw new Error('UNAUTHORIZED_TOKEN: Sesi Google Access Token telah kedaluwarsa atau tidak valid. Silakan login ulang.');
+      }
       const errorText = await response.text();
       throw new Error(`Gagal menyimpan ke Database Cloud: ${response.statusText} (${errorText})`);
     }

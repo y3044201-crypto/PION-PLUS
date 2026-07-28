@@ -1,8 +1,13 @@
-import { signInWithPopup, onAuthStateChanged, User, signOut } from 'firebase/auth';
+import { signInWithPopup, onAuthStateChanged, User, signOut, GoogleAuthProvider } from 'firebase/auth';
 import { auth, googleProvider } from './firebase';
 
 let isSigningIn = false;
-let cachedAccessToken: string | null = null;
+let cachedAccessToken: string | null = (typeof window !== 'undefined' ? localStorage.getItem('google_access_token') : null);
+
+// Helper function to extract credential from Firebase GoogleAuthProvider
+function GoogleAuthProvider_credentialFromResult(result: any) {
+  return GoogleAuthProvider.credentialFromResult(result);
+}
 
 // Initialize auth state listener.
 export const initAuth = (
@@ -11,10 +16,15 @@ export const initAuth = (
 ) => {
   return onAuthStateChanged(auth, async (user: User | null) => {
     if (user) {
+      if (!cachedAccessToken && typeof window !== 'undefined') {
+        cachedAccessToken = localStorage.getItem('google_access_token');
+      }
       if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
     } else {
-      cachedAccessToken = null;
-      if (onAuthFailure) onAuthFailure();
+      if (!cachedAccessToken && typeof window !== 'undefined') {
+        cachedAccessToken = localStorage.getItem('google_access_token');
+      }
+      if (onAuthFailure && !cachedAccessToken) onAuthFailure();
     }
   });
 };
@@ -30,6 +40,9 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     }
 
     cachedAccessToken = credential.accessToken;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('google_access_token', cachedAccessToken);
+    }
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
     if (error?.code !== 'auth/popup-closed-by-user' && error?.code !== 'auth/cancelled-popup-request') {
@@ -43,21 +56,32 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
   }
 };
 
-// Helper function to extract credential from Firebase GoogleAuthProvider
-import { GoogleAuthProvider } from 'firebase/auth';
-function GoogleAuthProvider_credentialFromResult(result: any) {
-  return GoogleAuthProvider.credentialFromResult(result);
-}
-
 export const getAccessToken = async (): Promise<string | null> => {
+  if (!cachedAccessToken && typeof window !== 'undefined') {
+    cachedAccessToken = localStorage.getItem('google_access_token');
+  }
   return cachedAccessToken;
 };
 
 export const setAccessTokenManual = (token: string) => {
   cachedAccessToken = token;
+  if (typeof window !== 'undefined') {
+    if (token) {
+      localStorage.setItem('google_access_token', token);
+    } else {
+      localStorage.removeItem('google_access_token');
+    }
+  }
+};
+
+export const clearAccessToken = () => {
+  cachedAccessToken = null;
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('google_access_token');
+  }
 };
 
 export const logoutUser = async () => {
   await signOut(auth);
-  cachedAccessToken = null;
+  clearAccessToken();
 };
