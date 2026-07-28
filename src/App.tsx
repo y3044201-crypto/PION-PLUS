@@ -4,6 +4,7 @@ import { Header } from './components/Header';
 import { SpreadsheetEditor } from './components/SpreadsheetEditor';
 import { DashboardView } from './components/DashboardView';
 import { SheetSelectorModal } from './components/SheetSelectorModal';
+import { AppsScriptConfigModal } from './components/AppsScriptConfigModal';
 import { ConfirmationModal } from './components/ConfirmationModal';
 import { GlobalLoadingOverlay } from './components/GlobalLoadingOverlay';
 import { ConfirmationConfig, SampleTemplate, SheetTab, SyncStatus } from './types';
@@ -19,7 +20,8 @@ import {
   addNewSheetTab, 
   deleteSheetTab, 
   createNewSpreadsheet, 
-  extractSpreadsheetId 
+  extractSpreadsheetId,
+  getAppsScriptUrl
 } from './lib/sheetsApi';
 import { Loader2, Sparkles, FileSpreadsheet } from 'lucide-react';
 
@@ -52,6 +54,7 @@ export default function App() {
 
   // Modals & Glassmorphism Feedback
   const [isSelectorOpen, setIsSelectorOpen] = useState<boolean>(false);
+  const [isAppsScriptModalOpen, setIsAppsScriptModalOpen] = useState<boolean>(false);
   const [confirmationConfig, setConfirmationConfig] = useState<ConfirmationConfig>({
     isOpen: false,
     title: '',
@@ -140,9 +143,9 @@ export default function App() {
       return;
     }
 
-    if (!token) {
-      triggerGlassFeedback('Akses Diperlukan', 'Silakan masuk dengan akun Google Anda terlebih dahulu.');
-      handleLogin();
+    if (!token && !getAppsScriptUrl()) {
+      setIsAppsScriptModalOpen(true);
+      triggerGlassFeedback('Konfigurasi Apps Script Diperlukan', 'Silakan atur URL Web App Google Apps Script atau Masuk Google.');
       return;
     }
 
@@ -164,10 +167,10 @@ export default function App() {
       setSyncStatus('synced');
       setHasUnsavedChanges(false);
 
-      triggerGlassFeedback('Spreadsheet Terhubung 2-Arah', 'Berhasil memuat data');
+      triggerGlassFeedback('Spreadsheet Terhubung 2-Arah', 'Berhasil memuat data dari Cloud');
     } catch (err: any) {
       console.error(err);
-      triggerGlassFeedback('Gagal Memuat Spreadsheet', err.message || 'Periksa izin spreadsheet Anda.');
+      triggerGlassFeedback('Gagal Memuat Spreadsheet', err.message || 'Periksa URL/ID Spreadsheet dan Web App URL.');
     } finally {
       setIsLoadingSheet(false);
     }
@@ -178,7 +181,6 @@ export default function App() {
     setActiveTabTitle(sheetTitle);
     if (isSandboxMode) return;
 
-    if (!token) return;
     setIsLoadingSheet(true);
     try {
       const gridData = await getSheetGridData(spreadsheetId, sheetTitle, token);
@@ -210,7 +212,7 @@ export default function App() {
 
   // Create new real spreadsheet in Drive
   const handleCreateNewSpreadsheet = async (title: string, template: SampleTemplate) => {
-    if (!token) {
+    if (!token && !getAppsScriptUrl()) {
       handleLoadSandboxTemplate({ ...template, title });
       return;
     }
@@ -228,7 +230,7 @@ export default function App() {
       setIsSandboxMode(false);
       setSyncStatus('synced');
       setHasUnsavedChanges(false);
-      triggerGlassFeedback('Spreadsheet Baru Dibuat', `'${title}' berhasil dibuat di Cloud Drive Anda.`);
+      triggerGlassFeedback('Spreadsheet Baru Dibuat', `'${title}' berhasil dibuat di Cloud.`);
     } catch (err: any) {
       console.error(err);
       triggerGlassFeedback('Gagal Membuat Spreadsheet', err.message);
@@ -253,7 +255,7 @@ export default function App() {
       return;
     }
 
-    if (!token) return;
+    if (!token && !getAppsScriptUrl()) return;
 
     if (autoSync) {
       setSyncStatus('saving');
@@ -281,7 +283,7 @@ export default function App() {
     updatedHeaders[colIndex] = newHeaderName;
     setHeaders(updatedHeaders);
 
-    if (isSandboxMode || !token) return;
+    if (isSandboxMode || (!token && !getAppsScriptUrl())) return;
 
     if (autoSync) {
       setSyncStatus('saving');
@@ -306,7 +308,7 @@ export default function App() {
     const updatedRows = [...rows, rowValues];
     setRows(updatedRows);
 
-    if (isSandboxMode || !token) {
+    if (isSandboxMode || (!token && !getAppsScriptUrl())) {
       triggerGlassFeedback('Baris Ditambahkan', 'Baris baru ditambahkan secara lokal.');
       return;
     }
@@ -344,7 +346,7 @@ export default function App() {
         const updatedRows = rows.filter((_, idx) => idx !== rowIndex);
         setRows(updatedRows);
 
-        if (isSandboxMode || !token) {
+        if (isSandboxMode || (!token && !getAppsScriptUrl())) {
           triggerGlassFeedback('Baris Dihapus', 'Baris berhasil dihapus.');
           return;
         }
@@ -355,7 +357,7 @@ export default function App() {
           if (currentTabObj && currentTabObj.sheetId !== undefined) {
             // Row index 0 is header, row index 1 is first data row
             const sheetsRowIdx0Based = rowIndex + 1;
-            await deleteRowInSheet(spreadsheetId, currentTabObj.sheetId, sheetsRowIdx0Based, token);
+            await deleteRowInSheet(spreadsheetId, currentTabObj.sheetId, sheetsRowIdx0Based, token, activeTabTitle);
           } else {
             const fullValues = [headers, ...updatedRows];
             await updateFullSheetValues(spreadsheetId, activeTabTitle, fullValues, token);
@@ -379,7 +381,7 @@ export default function App() {
     setHeaders(updatedHeaders);
     setRows(updatedRows);
 
-    if (isSandboxMode || !token) {
+    if (isSandboxMode || (!token && !getAppsScriptUrl())) {
       triggerGlassFeedback('Kolom Ditambahkan', `Kolom '${columnName}' ditambahkan.`);
       return;
     }
@@ -404,7 +406,7 @@ export default function App() {
       return;
     }
 
-    if (isSandboxMode || !token) {
+    if (isSandboxMode || (!token && !getAppsScriptUrl())) {
       const newTabObj: SheetTab = {
         sheetId: Date.now(),
         title: newTabTitle,
@@ -446,7 +448,7 @@ export default function App() {
       onConfirm: async () => {
         setConfirmationConfig((prev) => ({ ...prev, isOpen: false }));
 
-        if (isSandboxMode || !token) {
+        if (isSandboxMode || (!token && !getAppsScriptUrl())) {
           const updatedTabs = sheetTabs.filter((t) => t.title !== tabTitle);
           setSheetTabs(updatedTabs);
           if (updatedTabs.length > 0) {
@@ -479,7 +481,7 @@ export default function App() {
 
   // Manual Full Save / Sync to Google Sheets
   const handleManualSave = async () => {
-    if (isSandboxMode || !token) return;
+    if (isSandboxMode || (!token && !getAppsScriptUrl())) return;
 
     setSyncStatus('saving');
     try {
@@ -524,6 +526,7 @@ export default function App() {
         onLogout={handleLogout}
         onManualSave={handleManualSave}
         hasUnsavedChanges={hasUnsavedChanges}
+        onOpenAppsScriptConfig={() => setIsAppsScriptModalOpen(true)}
       />
 
       {/* Global Luxury Loading Overlay for Spreadsheet operations */}
@@ -598,6 +601,12 @@ export default function App() {
         confirmVariant={confirmationConfig.confirmVariant}
         onConfirm={confirmationConfig.onConfirm}
         onCancel={() => setConfirmationConfig((prev) => ({ ...prev, isOpen: false }))}
+      />
+
+      <AppsScriptConfigModal
+        isOpen={isAppsScriptModalOpen}
+        onClose={() => setIsAppsScriptModalOpen(false)}
+        onSaved={() => triggerGlassFeedback('Apps Script Tersimpan', 'Konfigurasi Web App URL aktif.')}
       />
 
     </div>

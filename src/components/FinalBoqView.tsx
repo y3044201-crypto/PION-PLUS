@@ -25,12 +25,9 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
-  Plus,
-  Lock,
-  Key,
-  ShieldCheck
+  Plus
 } from 'lucide-react';
-import { getAccessToken, googleSignIn, clearAccessToken, setAccessTokenManual } from '../lib/auth';
+import { getAccessToken, googleSignIn } from '../lib/auth';
 import { savePoToGoogleSheet, removeLeadingZeroes } from '../lib/sheetsApi';
 import { fetchBoqBySonumb, parseCurrencyNumber } from '../lib/finalBoqSheet';
 
@@ -91,22 +88,11 @@ export const FinalBoqView: React.FC<FinalBoqViewProps> = ({
   const [spreadsheetSearchTerm, setSpreadsheetSearchTerm] = useState<string>('');
   const [isSearchingSpreadsheet, setIsSearchingSpreadsheet] = useState<boolean>(false);
   const [isCopiedTable, setIsCopiedTable] = useState<boolean>(false);
-  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
-  const [authModalError, setAuthModalError] = useState<string>('');
-  const [manualTokenInput, setManualTokenInput] = useState<string>('');
-  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
-  const [hasToken, setHasToken] = useState<boolean>(false);
   const [noticeOverlay, setNoticeOverlay] = useState<{
     isVisible: boolean;
     title?: string;
     description?: string;
   }>({ isVisible: false });
-
-  useEffect(() => {
-    getAccessToken().then(tok => {
-      setHasToken(!!tok);
-    });
-  }, [showAuthModal]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const subjectRef = useRef<HTMLTextAreaElement>(null);
@@ -303,95 +289,6 @@ export const FinalBoqView: React.FC<FinalBoqViewProps> = ({
     fileInputRef.current?.click();
   };
 
-  const handleGoogleSignInFromModal = async () => {
-    setIsLoggingIn(true);
-    setAuthModalError('');
-    try {
-      const res = await googleSignIn();
-      if (res?.accessToken) {
-        setHasToken(true);
-        setShowAuthModal(false);
-        const successMsg = 'Berhasil terhubung ke Google! Menyimpan data ke Database Cloud...';
-        showNotification(successMsg);
-        if (externalShowToast) externalShowToast(successMsg);
-        await doSaveToSheet(res.accessToken);
-      }
-    } catch (err: any) {
-      if (err?.code === 'auth/unauthorized-domain') {
-        setAuthModalError('Domain Vercel/Website ini belum didaftarkan di Firebase Console (Authentication -> Authorized Domains). Silakan masukkan Token Google secara manual di bawah.');
-      } else if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
-        setAuthModalError('Popup login Google ditutup sebelum selesai.');
-      } else {
-        setAuthModalError(`Gagal Login Google: ${err?.message || 'Izin login diperlukan'}`);
-      }
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  const handleSaveManualToken = async () => {
-    if (!manualTokenInput.trim()) {
-      setAuthModalError('Masukkan Google Access Token terlebih dahulu.');
-      return;
-    }
-    const cleanTok = manualTokenInput.trim();
-    setAccessTokenManual(cleanTok);
-    setHasToken(true);
-    setShowAuthModal(false);
-    showNotification('Access Token disimpan. Menyimpan data ke Database Cloud...');
-    await doSaveToSheet(cleanTok);
-  };
-
-  const handleSaveLocalOnly = () => {
-    setShowAuthModal(false);
-    const msg = 'Data Purchase Order tersimpan aman di Database Lokal.';
-    showNotification(msg);
-    if (externalShowToast) externalShowToast(msg);
-  };
-
-  const doSaveToSheet = async (tokenToUse: string) => {
-    setIsSaving(true);
-    showNotification('Menyimpan data ke Database Cloud Google Sheets...');
-    if (externalShowToast) {
-      externalShowToast('Menyimpan data ke Database Cloud Google Sheets...');
-    }
-
-    try {
-      const res = await savePoToGoogleSheet(poData, tokenToUse);
-      if (res) {
-        const successMsg = `Berhasil disimpan ke Database Cloud Google Sheets! (${res.rowsAdded} baris tersimpan)`;
-        showNotification(successMsg);
-        if (externalShowToast) externalShowToast(successMsg);
-
-        // Reset data ke kondisi awal setelah berhasil simpan
-        setPoData(EMPTY_PO_DATA);
-        setFileName('Belum ada berkas');
-        setExtractedText('');
-        try {
-          localStorage.removeItem('saved_po_data');
-        } catch (e) {}
-      }
-    } catch (sheetErr: any) {
-      console.error('Save to Sheets error:', sheetErr);
-      const errText = String(sheetErr?.message || sheetErr);
-      if (errText.includes('UNAUTHORIZED_TOKEN') || errText.includes('401') || errText.includes('403')) {
-        clearAccessToken();
-        setHasToken(false);
-        setAuthModalError('Sesi Token Google telah kedaluwarsa atau tidak valid. Silakan login Google ulang di bawah.');
-        setShowAuthModal(true);
-      } else {
-        const rawMsg = sheetErr?.message || 'Error';
-        const errMsg = rawMsg.includes('sudah ada di') || rawMsg.includes('sudah ada')
-          ? rawMsg.replace(/Google Sheets/g, 'Database')
-          : `Tersimpan di Lokal. Gagal Sync Cloud: ${rawMsg.replace(/Google Sheets/g, 'Database')}`;
-        showNotification(errMsg);
-        if (externalShowToast) externalShowToast(errMsg);
-      }
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   const handleSave = async () => {
     if (isPageEmpty) {
       const msg = 'Halaman Purchase Order masih kosong. Silakan unggah file PDF PO terlebih dahulu sebelum menyimpan data.';
@@ -407,32 +304,69 @@ export const FinalBoqView: React.FC<FinalBoqViewProps> = ({
       return;
     }
 
-    // Always store a copy in local PO database history so data is 100% safe
     try {
       localStorage.setItem('saved_po_data', JSON.stringify(poData));
-      const existingHistoryRaw = localStorage.getItem('po_history_list');
-      let historyList = existingHistoryRaw ? JSON.parse(existingHistoryRaw) : [];
-      if (!Array.isArray(historyList)) historyList = [];
-      const cleanSo = poData.soNumber.trim();
-      const existingIdx = historyList.findIndex((item: any) => item?.soNumber?.trim()?.toLowerCase() === cleanSo.toLowerCase());
-      if (existingIdx >= 0) {
-        historyList[existingIdx] = { ...poData, savedAt: new Date().toISOString() };
-      } else {
-        historyList.push({ ...poData, savedAt: new Date().toISOString() });
-      }
-      localStorage.setItem('po_history_list', JSON.stringify(historyList));
     } catch (e) {
-      console.error('Local history save error:', e);
+      console.error(e);
     }
 
-    const token = await getAccessToken();
-    if (!token) {
-      setAuthModalError('');
-      setShowAuthModal(true);
-      return;
+    setIsSaving(true);
+    showNotification('Menyimpan data ke Database Cloud...');
+    if (externalShowToast) {
+      externalShowToast('Menyimpan data ke Database Cloud...');
     }
 
-    await doSaveToSheet(token);
+    try {
+      let token = await getAccessToken();
+      if (!token) {
+        try {
+          const authRes = await googleSignIn();
+          token = authRes?.accessToken || null;
+        } catch (authErr: any) {
+          if (authErr?.code === 'auth/popup-closed-by-user' || authErr?.code === 'auth/cancelled-popup-request') {
+            const msg = 'Login dibatalkan. Data Purchase Order tetap tersimpan di lokal.';
+            showNotification(msg);
+            if (externalShowToast) externalShowToast(msg);
+          } else {
+            console.error('Google Auth failed:', authErr);
+            const msg = 'Data tersimpan lokal. Login diperlukan untuk ke Cloud.';
+            showNotification(msg);
+            if (externalShowToast) externalShowToast(msg);
+          }
+          setIsSaving(false);
+          return;
+        }
+      }
+
+      if (token) {
+        const res = await savePoToGoogleSheet(poData, token);
+        const successMsg = `Berhasil disimpan ke Database Cloud! (${res.rowsAdded} baris)`;
+        showNotification(successMsg);
+        if (externalShowToast) externalShowToast(successMsg);
+
+        // Reset data ke kondisi awal buka setelah berhasil simpan
+        setPoData(EMPTY_PO_DATA);
+        setFileName('Belum ada berkas');
+        setExtractedText('');
+        try {
+          localStorage.removeItem('saved_po_data');
+        } catch (e) {}
+      } else {
+        const msg = 'Data tersimpan lokal (Access Token tidak tersedia).';
+        showNotification(msg);
+        if (externalShowToast) externalShowToast(msg);
+      }
+    } catch (err: any) {
+      console.error('Save to Sheets error:', err);
+      const rawMsg = err?.message || 'Error';
+      const errMsg = rawMsg.includes('sudah ada di') || rawMsg.includes('sudah ada')
+        ? rawMsg.replace(/Google Sheets/g, 'Database')
+        : `Gagal menyimpan ke Database: ${rawMsg.replace(/Google Sheets/g, 'Database')}`;
+      showNotification(errMsg);
+      if (externalShowToast) externalShowToast(errMsg);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   useEffect(() => {
@@ -1210,118 +1144,6 @@ export const FinalBoqView: React.FC<FinalBoqViewProps> = ({
         </div>
 
       </div>
-
-      {/* ==================== GOOGLE AUTH & ACCESS TOKEN MODAL ==================== */}
-      {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 text-slate-800 space-y-5">
-            
-            {/* Modal Header */}
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 text-white flex items-center justify-center shadow-md shrink-0">
-                  <FileSpreadsheet className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 leading-snug">
-                    Otorisasi Google Sheets (Database Cloud)
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Satu langkah lagi untuk menyimpan data PO ke Database Cloud
-                  </p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowAuthModal(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Error / Alert banner if any */}
-            {authModalError && (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex items-start gap-2.5">
-                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div className="flex-1 leading-relaxed">{authModalError}</div>
-              </div>
-            )}
-
-            {/* Option 1: Direct Google Login Button */}
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>Opsi 1: Masuk dengan Akun Google</span>
-              </p>
-              <button
-                onClick={handleGoogleSignInFromModal}
-                disabled={isLoggingIn}
-                className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-md flex items-center justify-center gap-2.5 transition-all active:scale-[0.98] disabled:opacity-60 cursor-pointer"
-              >
-                {isLoggingIn ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
-                    <span>Menghubungkan ke Google...</span>
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" viewBox="0 0 48 48">
-                      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-                      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-                      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-                      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-                    </svg>
-                    <span>Login Google Sekarang</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* Divider */}
-            <div className="relative flex items-center justify-center my-2">
-              <div className="border-t border-slate-200 w-full"></div>
-              <span className="bg-white px-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider absolute">
-                Atau Manual Token
-              </span>
-            </div>
-
-            {/* Option 2: Manual Google Access Token */}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                <Key className="w-3.5 h-3.5 text-indigo-600" />
-                <span>Opsi 2: Input Access Token OAuth2 (Vercel / Custom Domain)</span>
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Paste ya29.a0A..."
-                  value={manualTokenInput}
-                  onChange={(e) => setManualTokenInput(e.target.value)}
-                  className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:border-indigo-500 font-mono text-slate-800"
-                />
-                <button
-                  onClick={handleSaveManualToken}
-                  className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer"
-                >
-                  Gunakan Token
-                </button>
-              </div>
-            </div>
-
-            {/* Local Save Fallback Option */}
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-              <button
-                onClick={handleSaveLocalOnly}
-                className="text-xs text-slate-500 hover:text-slate-800 font-semibold underline underline-offset-2 transition-colors cursor-pointer"
-              >
-                Simpan di Database Lokal Saja
-              </button>
-              <span className="text-[10px] text-slate-400">Data tersimpan 100% aman</span>
-            </div>
-
-          </div>
-        </div>
-      )}
 
     </div>
   );

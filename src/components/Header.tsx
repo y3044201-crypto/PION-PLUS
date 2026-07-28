@@ -1,6 +1,7 @@
 import React from 'react';
 import { User } from 'firebase/auth';
 import { 
+  Code2,
   FileSpreadsheet, 
   FolderOpen, 
   PlusCircle, 
@@ -29,6 +30,7 @@ interface HeaderProps {
   onLogout: () => void;
   onManualSave: () => void;
   hasUnsavedChanges: boolean;
+  onOpenAppsScriptConfig?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -46,6 +48,7 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
   onManualSave,
   hasUnsavedChanges,
+  onOpenAppsScriptConfig,
 }) => {
   return (
     <header className="bg-[#050816]/90 backdrop-blur-2xl border-b border-white/10 text-slate-100 sticky top-0 z-30 shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
@@ -162,6 +165,17 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right: Actions & Google Sign In */}
         <div className="flex items-center gap-2">
+          {onOpenAppsScriptConfig && (
+            <button
+              onClick={onOpenAppsScriptConfig}
+              className="px-3.5 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-[0_0_12px_rgba(6,182,212,0.15)]"
+              title="Konfigurasi Apps Script (Tanpa Login OAuth)"
+            >
+              <Code2 className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden md:inline">Apps Script</span>
+            </button>
+          )}
+
           <button
             onClick={onOpenSelector}
             className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95"
